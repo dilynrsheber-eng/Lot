@@ -34,6 +34,10 @@ test('dealership isolation, administrator invitations, locked employee identity 
   const inviteAdmin=await post('/team',{name:'Co Admin',email:'co@example.com',role:'admin'},owner);const adminCode=(await inviteAdmin.text()).match(/<code>([^<]+)<\/code>/)[1];
   assert.equal((await post('/join',{email:'co@example.com',code:adminCode,password:p,confirm:p})).status,200);
   const co=await login('co@example.com',p);assert.equal((await get('/team',co)).status,200);
+  const lots=await (await get('/api/locations',employee)).json();const walkResponse=await post('/api/stock-walks',{locationId:lots[0].id},employee,true);assert.equal(walkResponse.status,201);const walk=await walkResponse.json();
+  assert.equal((await get('/api/stock-walks/'+walk.id,second)).status,404);
+  assert.equal((await post('/api/stock-walks/'+walk.id+'/scan',{unitId:b.id},employee,true)).status,404);
+  assert.equal((await post('/api/stock-walks/'+walk.id+'/complete',{},employee,true)).status,200);
   await stop();await start();assert.equal((await get('/api/units',employee)).status,200);assert.equal((await get('/api/units/'+a.id,second)).status,404);
  }finally{await stop();await rm(dir,{recursive:true,force:true});}
 });

@@ -35,3 +35,7 @@ header{justify-content:flex-start}header .badge{margin-left:auto}.home-page head
 .drive-route-map{height:340px;width:100%;border-radius:12px;margin-top:16px;isolation:isolate}.drive-route-map .leaflet-control-attribution a{color:#0877bb}.drive-route-map .leaflet-control-zoom a{min-height:0}@media(max-width:600px){.drive-route-map{height:300px}}
 
 .condition-photo-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;border:0;padding:0;margin:20px 0}.condition-photo-grid figure{margin:0}.condition-photo-grid img{width:100%;max-height:220px;object-fit:contain}.condition-photo-grid input{min-width:0}.row-location{font-size:13px}@media(max-width:600px){.condition-photo-grid{grid-template-columns:1fr}.inventory-row{flex-wrap:wrap}}
+
+#walk-controls[hidden],#walk-camera-panel[hidden]{display:none!important}#walk-video{width:100%;max-height:360px;object-fit:cover;border-radius:12px}#walk-controls button{margin:10px 0}#walk-manual{margin:20px 0}
+
+.drive-step[hidden],#drive-back[hidden],#drive-next[hidden],#drive-submit[hidden]{display:none!important}#trip-form .condition-photo-grid{display:block}#trip-form .actions{flex-wrap:wrap}

@@ -1,3 +1,4 @@
+import { showStockWalk } from './stock-walk.mjs';
 import { clearRouteMaps } from './route-map.mjs';
 import { showTrips } from './trips.mjs';
 import { draft as deviceDraft } from './drafts.mjs';
@@ -42,6 +43,7 @@ function render() {
   document.querySelector('#nav-inventory').setAttribute('aria-current',['inventory','list','unit','edit','tag','trips','history'].includes(page) ? 'page' : 'false');
   document.querySelector('#nav-menu').setAttribute('aria-current',page === 'menu' ? 'page' : 'false');
   document.querySelector('#nav-new').setAttribute('aria-current',page === 'new' ? 'page' : 'false');
+  if(page === 'stockwalk'){stopScan=showStockWalk(app,id);return;}
   if(page === 'locations')return locationsPage();
   if(page === 'menu') return menu();
   if(page === 'list') return inventoryList();
@@ -111,7 +113,7 @@ function home() {
   };
 }
 function menu() {
-  app.innerHTML = `<div class="eyebrow">LOT ROT</div><h1>Menu</h1><p>Choose what you want to do.</p><div class="menu-options"><a class="panel menu-option" href="#home"><h2>Home &amp; Scan</h2><p>Scan a QR tag or look up a stock number.</p></a><a class="panel menu-option" href="#list"><h2>Inventory List</h2><p>A compact list. Search by VIN, stock number, or year, make and model.</p></a><a class="panel menu-option" href="#new"><h2>Add a vehicle</h2><p>Enter vehicle details, add an optional photo, and save or generate a printable QR tag.</p></a></div><div class="panel menu-help"><h2>Print or replace a QR tag</h2><p>Open Inventory, select a unit, then choose Generate QR tag. The tag includes the stock number for manual lookup.</p><a class="button secondary" href="#inventory">Find a unit</a></div><p class="hint">Open a unit for departure, return, condition photos and trip history. Browser GPS capture requires an open page.</p><button id="reload-app" class="secondary">Reload latest app</button>`;
+  app.innerHTML = `<div class="eyebrow">LOT ROT</div><h1>Menu</h1><p>Choose what you want to do.</p><div class="menu-options"><a class="panel menu-option" href="#stockwalk"><h2>Start stock walk</h2><p>Select a lot and scan units to update their inventory location.</p></a><a class="panel menu-option" href="#home"><h2>Home &amp; Scan</h2><p>Scan a QR tag or look up a stock number.</p></a><a class="panel menu-option" href="#list"><h2>Inventory List</h2><p>A compact list. Search by VIN, stock number, or year, make and model.</p></a><a class="panel menu-option" href="#new"><h2>Add a vehicle</h2><p>Enter vehicle details, add an optional photo, and save or generate a printable QR tag.</p></a></div><div class="panel menu-help"><h2>Print or replace a QR tag</h2><p>Open Inventory, select a unit, then choose Generate QR tag. The tag includes the stock number for manual lookup.</p><a class="button secondary" href="#inventory">Find a unit</a></div><p class="hint">Open a unit for departure, return, condition photos and trip history. Browser GPS capture requires an open page.</p><button id="reload-app" class="secondary">Reload latest app</button>`;
   document.querySelector('#reload-app').onclick=()=>location.reload();
   if(currentProfile?.employee?.role==='admin'){const link=document.createElement('a');link.href='/team';link.className='panel menu-option';link.innerHTML='<h2>Team &amp; invitations</h2><p>Invite employees or another administrator to your dealership.</p>';document.querySelector('.menu-options').append(link);const locationsLink=document.createElement('a');locationsLink.href='#locations';locationsLink.className='panel menu-option';locationsLink.innerHTML='<h2>Locations</h2><p>Add or rename dealership locations.</p>';document.querySelector('.menu-options').append(locationsLink);}
 }

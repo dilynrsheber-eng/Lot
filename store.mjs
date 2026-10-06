@@ -19,9 +19,10 @@ export function openStore(path) {
     CREATE TABLE IF NOT EXISTS trip_points(id TEXT PRIMARY KEY,tripId TEXT NOT NULL,latitude REAL NOT NULL,longitude REAL NOT NULL,accuracy REAL NOT NULL,recordedAt TEXT NOT NULL,receivedAt TEXT NOT NULL);
     CREATE UNIQUE INDEX IF NOT EXISTS one_departure ON trip_events(tripId) WHERE kind='departure';
     CREATE UNIQUE INDEX IF NOT EXISTS one_return ON trip_events(tripId) WHERE kind='return';`);
+  db.exec('CREATE TABLE IF NOT EXISTS stock_walks(id TEXT PRIMARY KEY,locationId TEXT NOT NULL,locationName TEXT NOT NULL,employeeId TEXT NOT NULL,employeeName TEXT NOT NULL,startedAt TEXT NOT NULL,completedAt TEXT); CREATE TABLE IF NOT EXISTS stock_scans(id TEXT PRIMARY KEY,walkId TEXT NOT NULL,unitId TEXT NOT NULL,stockNumber TEXT NOT NULL,previousLocation TEXT,locationName TEXT NOT NULL,scannedAt TEXT NOT NULL,UNIQUE(walkId,unitId));');
   let retentionMode=false;db.function('retention_allowed',()=>retentionMode ? 1 : 0);
   db.exec('CREATE TABLE IF NOT EXISTS condition_photos(eventId TEXT NOT NULL, angle TEXT NOT NULL, photo BLOB NOT NULL, photoType TEXT NOT NULL, PRIMARY KEY(eventId,angle)); CREATE TABLE IF NOT EXISTS locations(id TEXT PRIMARY KEY,name TEXT NOT NULL COLLATE NOCASE UNIQUE); CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY,value TEXT);');
-  for(const table of ['trip_events','trip_points','condition_photos']) {
+  for(const table of ['trip_events','trip_points','condition_photos','stock_scans']) {
     db.exec(`DROP TRIGGER IF EXISTS ${table}_delete; CREATE TRIGGER IF NOT EXISTS ${table}_update BEFORE UPDATE ON ${table} BEGIN SELECT RAISE(ABORT,'Trip history is append-only'); END;`);
     db.exec(`CREATE TRIGGER ${table}_delete BEFORE DELETE ON ${table} WHEN retention_allowed()=0 BEGIN SELECT RAISE(ABORT,'Trip history is append-only'); END;`);
   }
@@ -140,6 +141,7 @@ export function openStore(path) {
       retentionMode=true;
       for(const unit of eligible){if(active(unit.id))continue;
         db.prepare('DELETE FROM trip_points WHERE tripId IN (SELECT tripId FROM trip_events WHERE unitId=?)').run(unit.id);
+        db.prepare('DELETE FROM stock_scans WHERE unitId=?').run(unit.id);
         db.prepare('DELETE FROM condition_photos WHERE eventId IN (SELECT id FROM trip_events WHERE unitId=?)').run(unit.id);
         db.prepare('DELETE FROM trip_events WHERE unitId=?').run(unit.id);
         db.prepare('UPDATE units SET historyPurgedAt=?,updatedAt=?,version=version+1 WHERE id=?').run(new Date(now).toISOString(),new Date(now).toISOString(),unit.id);purged++;
@@ -148,5 +150,12 @@ export function openStore(path) {
     }catch(e){db.exec('ROLLBACK');throw e;}finally{retentionMode=false;}
     if(purged)db.exec('VACUUM; PRAGMA wal_checkpoint(TRUNCATE)');return {purged};
   }
-  return {locations,addLocation,renameLocation,seedLocations,list,get,create,update,importUnits,setSold,purgeSoldHistory,events,active,event,point,points:tripId=>db.prepare('SELECT latitude,longitude,accuracy,recordedAt,receivedAt FROM trip_points WHERE tripId=? ORDER BY rowid').all(tripId),getTripPhoto:(id,angle)=>angle?db.prepare('SELECT photo,photoType FROM condition_photos WHERE eventId=? AND angle=?').get(id,angle):db.prepare('SELECT photo,photoType FROM trip_events WHERE id=? AND photo IS NOT NULL').get(id),getPhoto:id=>db.prepare('SELECT photo,photoType FROM units WHERE id=? AND photo IS NOT NULL').get(id),close:()=>db.close()};
+
+  const walk=id=>{const w=db.prepare('SELECT * FROM stock_walks WHERE id=?').get(id);if(!w)throw new StoreError(404,'Stock walk not found.');return {...w,scans:db.prepare('SELECT * FROM stock_scans WHERE walkId=? ORDER BY scannedAt,id').all(id)};};
+  const startWalk=(locationId,employee)=>{const l=locations().find(l=>l.id===locationId);if(!l)throw new StoreError(422,'Choose a location belonging to your dealership.');const id=randomUUID();db.prepare('INSERT INTO stock_walks (id,locationId,locationName,employeeId,employeeName,startedAt) VALUES (?,?,?,?,?,?)').run(id,l.id,l.name,employee.id,employee.name,new Date().toISOString());return walk(id);};
+  const ownWalk=(id,employee)=>{const w=walk(id);if(w.employeeId!==employee.id&&employee.role!=='admin')throw new StoreError(403,'This stock walk belongs to another employee.');return w;};
+  const scanWalk=(id,unitId,employee)=>{db.exec('BEGIN IMMEDIATE');try{const w=ownWalk(id,employee);if(w.completedAt)throw new StoreError(409,'This stock walk is complete. Start a new one to scan more units.');const u=get(unitId);if(!u)throw new StoreError(404,'Unit not found in your dealership.');if(u.soldAt)throw new StoreError(409,'This unit is marked sold. Ask an administrator to restore it before scanning.');const existing=w.scans.find(s=>s.unitId===unitId);if(existing){db.exec('COMMIT');return {walk:w,unit:u,duplicate:true};}if(active(unitId))throw new StoreError(409,'This unit has an active drive. Complete the drive before updating its location.');const now=new Date().toISOString();db.prepare('INSERT INTO stock_scans VALUES (?,?,?,?,?,?,?)').run(randomUUID(),id,unitId,u.stockNumber,u.location,w.locationName,now);if(u.locationId!==w.locationId)db.prepare('UPDATE units SET locationId=?,updatedAt=?,version=version+1 WHERE id=?').run(w.locationId,now,unitId);db.exec('COMMIT');return {walk:walk(id),unit:get(unitId),duplicate:false};}catch(e){db.exec('ROLLBACK');throw e;}};
+  const completeWalk=(id,employee)=>{const w=ownWalk(id,employee);if(!w.completedAt)db.prepare('UPDATE stock_walks SET completedAt=? WHERE id=?').run(new Date().toISOString(),id);return walk(id);};
+
+  return {walk,ownWalk,startWalk,scanWalk,completeWalk,locations,addLocation,renameLocation,seedLocations,list,get,create,update,importUnits,setSold,purgeSoldHistory,events,active,event,point,points:tripId=>db.prepare('SELECT latitude,longitude,accuracy,recordedAt,receivedAt FROM trip_points WHERE tripId=? ORDER BY rowid').all(tripId),getTripPhoto:(id,angle)=>angle?db.prepare('SELECT photo,photoType FROM condition_photos WHERE eventId=? AND angle=?').get(id,angle):db.prepare('SELECT photo,photoType FROM trip_events WHERE id=? AND photo IS NOT NULL').get(id),getPhoto:id=>db.prepare('SELECT photo,photoType FROM units WHERE id=? AND photo IS NOT NULL').get(id),close:()=>db.close()};
 }
