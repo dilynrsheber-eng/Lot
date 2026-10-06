@@ -23,3 +23,5 @@ textarea,select{box-sizing:border-box;width:100%;font:inherit;padding:12px;margi
 header{justify-content:flex-start}header .badge{margin-left:auto}.home-page header .company-name{margin-left:auto}
 
 .header-logout{display:none}.home-page .header-logout{display:block;margin-left:auto;flex-shrink:0}.header-logout button{padding:10px 14px;min-height:44px;font-size:14px}
+
+.home-logo{mix-blend-mode:multiply}
