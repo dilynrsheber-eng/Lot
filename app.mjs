@@ -1,19 +1,22 @@
 import { showTrips } from './trips.mjs';
-import { draft } from './drafts.mjs';
+import { draft as deviceDraft } from './drafts.mjs';
 import { requestJson } from './api-client.mjs?v=save5';
 import { validateUnit, searchUnits, readUnits } from './domain.mjs';
 import { unitLink, qrSvg } from './qr.mjs';
 const app = document.querySelector('#app');
+let currentProfile=null;
+const draft=(action,key,value)=>deviceDraft(action,`${currentProfile?.company?.id || 'local'}:${currentProfile?.employee?.id || 'local'}:${key}`,value);
 async function showCompany(){
   try{const profile=await requestJson('/api/me');const label=document.querySelector('#company-name');
+    currentProfile=profile;document.body.classList.toggle('employee-role',profile.employee?.role==='employee');
     if(label && profile.company?.name){label.textContent=profile.company.name;label.hidden=false;}
   }catch{/* Keep inventory available if the profile request cannot complete. */}
 }
-showCompany();
+await showCompany();
 const escape = value => String(value).replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
 let units = [], legacy = [], legacyError = false, requestSequence = 0, hasLoaded = false;
 try { const initial=document.querySelector('#initial-inventory'); if(initial) {units=JSON.parse(initial.textContent);hasLoaded=true;} } catch {}
-try { legacy = readUnits(localStorage); } catch { legacyError = true; }
+try { legacy = currentProfile?.company ? [] : readUnits(localStorage); } catch { legacyError = true; }
 function notify(message) { document.querySelector('#toast').textContent = message; setTimeout(() => document.querySelector('#toast').textContent = '', 5000); }
 async function api(path, method = 'GET', body) {
   return requestJson(path,method,body);
@@ -29,6 +32,7 @@ let stopScan = () => {};
 function render() {
   stopScan();
   const [page, id] = location.hash.slice(1).split('/');
+  if(currentProfile?.employee?.role==='employee' && ['new','edit'].includes(page)){app.innerHTML='<div class="panel"><h1>Administrator access required</h1><p>Your dealership administrator manages unit details. You can view inventory and record departures and returns.</p><a href="#home">Back to home</a></div>';return;}
   document.body.classList.toggle('home-page', !page || page === 'home');
   document.querySelector('#nav-home').setAttribute('aria-current',!page || page === 'home' ? 'page' : 'false');
   document.querySelector('#nav-inventory').setAttribute('aria-current',['inventory','list','unit','edit','tag','trips'].includes(page) ? 'page' : 'false');
@@ -41,12 +45,12 @@ function render() {
   if (page === 'new') return form();
   if (page === 'unit' || page === 'edit' || page === 'tag' || page === 'trips') {
     const unit = units.find(u => u.id === id);
-    if(unit && page==='unit'){try{let recent=JSON.parse(localStorage.getItem('lot-rot.recent') || '[]');if(!Array.isArray(recent))recent=[];localStorage.setItem('lot-rot.recent',JSON.stringify([unit.id,...recent.filter(value=>value!==unit.id)].slice(0,10)));}catch{}}
+    if(unit && page==='unit'){try{let recent=JSON.parse(localStorage.getItem('lot-rot.recent.'+(currentProfile?.company?.id || 'local')) || '[]');if(!Array.isArray(recent))recent=[];localStorage.setItem('lot-rot.recent.'+(currentProfile?.company?.id || 'local'),JSON.stringify([unit.id,...recent.filter(value=>value!==unit.id)].slice(0,10)));}catch{}}
     if (!unit) { app.innerHTML = '<a class="back" href="#inventory">← Inventory</a><div class="panel"><h1>Unit not found on this server</h1><p>If this is an older tag, import the original browser records first. Check that the QR address points to the computer hosting your inventory.</p></div>'; return; }
     if (page === 'trips') return showTrips(app,unit);
     if (page === 'tag') return tag(unit);
     if (page === 'edit') return form(unit);
-    app.innerHTML = `<a class="back" href="#inventory">← Inventory</a><div class="heading"><div><div class="eyebrow">UNIT RECORD</div><h1>${title(unit)}</h1><span class="stock">Stock ${escape(unit.stockNumber)}</span></div><a class="button secondary" href="#edit/${unit.id}">Edit unit</a></div><section class="panel">${unit.photoUrl ? `<img class="unit-photo" src="${unit.photoUrl}" alt="Reference photo of ${title(unit)}">` : ""}<h2>Vehicle details</h2><dl class="details">${[['year','Year'],['make','Make'],['model','Model'],['color','Color'],['stockNumber','Stock number'],['vin','VIN']].map(([k,l])=>`<div><dt>${l}</dt><dd>${escape(unit[k])}</dd></div>`).join('')}</dl></section><section class="panel"><h2>Departure &amp; return</h2><p>Record condition photos, view trip history, and capture foreground GPS.</p><a class="button" href="#trips/${unit.id}">Departure, return &amp; history</a></section><section class="panel"><h2>${unit.soldAt ? "Sold unit" : "Remove from active inventory"}</h2><p>${unit.soldAt ? "This unit is archived as sold. Trip history, GPS points and condition photos are automatically deleted 30 days after the sale." : "Mark a sold vehicle to remove it from active inventory. Its trip history, GPS points and condition photos will be permanently deleted after 30 days."}</p><button id="sold-action" class="secondary">${unit.soldAt ? "Restore to active inventory" : "Mark as sold"}</button><p id="sold-message" role="status"></p></section><section class="panel"><h2>QR tag</h2><p>Print a QR tag with the stock number for manual lookup.</p><a class="button" href="#tag/${unit.id}">Generate QR tag</a></section>`;
+    app.innerHTML = `<a class="back" href="#inventory">← Inventory</a><div class="heading"><div><div class="eyebrow">UNIT RECORD</div><h1>${title(unit)}</h1><span class="stock">Stock ${escape(unit.stockNumber)}</span></div><a class="button secondary" href="#edit/${unit.id}">Edit unit</a></div><section class="panel">${unit.photoUrl ? `<img class="unit-photo" src="${unit.photoUrl}" alt="Reference photo of ${title(unit)}">` : ""}<h2>Vehicle details</h2><dl class="details">${[['year','Year'],['make','Make'],['model','Model'],['color','Color'],['stockNumber','Stock number'],['vin','VIN']].map(([k,l])=>`<div><dt>${l}</dt><dd>${escape(unit[k])}</dd></div>`).join('')}</dl></section><section class="panel"><h2>Departure &amp; return</h2><p>Record condition photos, view trip history, and capture foreground GPS.</p><a class="button" href="#trips/${unit.id}">Departure, return &amp; history</a></section><section class="panel unit-sale"><h2>${unit.soldAt ? "Sold unit" : "Remove from active inventory"}</h2><p>${unit.soldAt ? "This unit is archived as sold. Trip history, GPS points and condition photos are automatically deleted 30 days after the sale." : "Mark a sold vehicle to remove it from active inventory. Its trip history, GPS points and condition photos will be permanently deleted after 30 days."}</p><button id="sold-action" class="secondary">${unit.soldAt ? "Restore to active inventory" : "Mark as sold"}</button><p id="sold-message" role="status"></p></section><section class="panel"><h2>QR tag</h2><p>Print a QR tag with the stock number for manual lookup.</p><a class="button" href="#tag/${unit.id}">Generate QR tag</a></section>`;
     document.querySelector("#sold-action").onclick=async()=>{const button=document.querySelector("#sold-action");button.disabled=true;try{const saved=await api(`/api/units/${unit.id}/sold`,"POST",{sold:!unit.soldAt,version:unit.version});units[units.findIndex(value=>value.id===saved.id)]=saved;render();notify(saved.soldAt ? "Marked sold. History cleanup is scheduled for 30 days after sale." : "Restored to active inventory.");}catch(error){document.querySelector("#sold-message").textContent=error.message;button.disabled=false;}};
     return;
   }
@@ -82,7 +86,7 @@ function inventoryList() {
 }
 
 function home() {
-  let recent=[];try{recent=JSON.parse(localStorage.getItem('lot-rot.recent') || '[]');if(!Array.isArray(recent))recent=[];}catch{}
+  let recent=[];try{recent=JSON.parse(localStorage.getItem('lot-rot.recent.'+(currentProfile?.company?.id || 'local')) || '[]');if(!Array.isArray(recent))recent=[];}catch{}
   const recentUnits=recent.map(id=>units.find(u=>u.id===id && !u.soldAt)).filter(Boolean).slice(0,3);
   app.innerHTML='<section class="scan-home"><img class="home-logo" src="/assets/lot-rot-logo.jpg" alt="Lot Rot"><h1>Scan a QR code</h1><p class="scan-subtitle">or enter a stock number below</p><form id="lookup-form"><label class="sr-only" for="stock-lookup">Stock number or VIN</label><input id="stock-lookup" type="search" enterkeyhint="search" placeholder="Stock number or VIN" autocomplete="off"><button type="button" id="scan-qr" class="scan-button">▣ &nbsp; Scan QR code</button><a class="button secondary lookup-button" style="text-align:center" href="#new">New Unit</a><a class="button secondary lookup-button" style="text-align:center" href="#list">Inventory list</a></form><p id="scan-message" role="status" aria-live="polite"></p><div id="camera-panel" hidden><video id="qr-video" autoplay muted playsinline></video><button id="stop-camera" class="secondary">Cancel scan</button></div><div id="lookup-results"></div><section class="recent-units"><h2>Recent Units</h2>'+ (recentUnits.length ? recentUnits.map(u=>'<a class="recent-row" href="#unit/'+encodeURIComponent(u.id)+'">'+(u.photoUrl ? '<img src="'+escape(u.photoUrl)+'" alt="">' : '<span class="recent-placeholder" aria-hidden="true">RV</span>')+'<span><strong>'+escape(u.stockNumber)+'</strong><small>'+title(u)+'</small></span><span aria-hidden="true">›</span></a>').join('') : '<p class="recent-empty">Units you open will appear here.</p>') + '</section></section>';
   const message=document.querySelector('#scan-message');
@@ -103,6 +107,7 @@ function home() {
 function menu() {
   app.innerHTML = `<div class="eyebrow">LOT ROT</div><h1>Menu</h1><p>Choose what you want to do.</p><div class="menu-options"><a class="panel menu-option" href="#home"><h2>Home &amp; Scan</h2><p>Scan a QR tag or look up a stock number.</p></a><a class="panel menu-option" href="#list"><h2>Inventory List</h2><p>A compact list. Search by VIN, stock number, or year, make and model.</p></a><a class="panel menu-option" href="#new"><h2>Add a vehicle</h2><p>Enter vehicle details, add an optional photo, and save or generate a printable QR tag.</p></a></div><div class="panel menu-help"><h2>Print or replace a QR tag</h2><p>Open Inventory, select a unit, then choose Generate QR tag. The tag includes the stock number for manual lookup.</p><a class="button secondary" href="#inventory">Find a unit</a></div><p class="hint">Open a unit for departure, return, condition photos and trip history. Browser GPS capture requires an open page.</p><button id="reload-app" class="secondary">Reload latest app</button>`;
   document.querySelector('#reload-app').onclick=()=>location.reload();
+  if(currentProfile?.employee?.role==='admin'){const link=document.createElement('a');link.href='/team';link.className='panel menu-option';link.innerHTML='<h2>Team &amp; invitations</h2><p>Invite employees or another administrator to your dealership.</p>';document.querySelector('.menu-options').append(link);}
 }
 function tag(unit) {
   app.innerHTML = `<div class="tag-controls"><a class="back" href="#unit/${unit.id}">← Unit details</a><div class="eyebrow">READY TO LABEL</div><h1>Print a unit tag</h1><p>The vehicle has been saved. Generate its QR below, then print.</p><label for="tag-base">App address for the QR link</label><input id="tag-base" type="url" value="${escape(location.origin + location.pathname)}"><p class="hint">For a phone scan, use this computer’s address reachable on your Wi-Fi, such as http://192.168.1.237:3000/. Localhost on a phone points to the phone itself.</p><div class="notice">Inventory is shared by the computer’s server. Phones on the same Wi-Fi can open this unit with a reachable server address. Keep the computer and server running. The app requires sign-in. Individual employee accounts are planned.</div><div class="actions"><button id="generate-tag">Generate QR</button><button id="print-tag" class="secondary" disabled>Print tag</button></div><p id="tag-error" class="error" role="alert"></p></div><section id="tag-preview" aria-live="polite"></section>`;

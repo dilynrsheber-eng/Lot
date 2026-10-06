@@ -1,22 +1,39 @@
 import http from 'node:http';
 import { readFile } from 'node:fs/promises';
+import { readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { resolve } from 'node:path';
+import { resolve, dirname, basename } from 'node:path';
 import { openStore, StoreError } from './store.mjs';
 import { createAuth } from './auth.mjs';
+import { createDealershipAuth } from './dealership-auth.mjs';
 import { initializeAuth } from './bootstrap-auth.mjs';
 const files = { "/vendor/jsQR.js":["vendor/jsQR.js","text/javascript"], '/trips.mjs':['trips.mjs','text/javascript'], '/drafts.mjs':['drafts.mjs','text/javascript'], '/api-client.mjs':['api-client.mjs','text/javascript'], '/assets/lot-rot-logo.jpg':['assets/lot-rot-logo.jpg','image/jpeg'], '/': ['index.html','text/html'], '/styles.css':['styles.css','text/css'], '/app.mjs':['app.mjs','text/javascript'], '/domain.mjs':['domain.mjs','text/javascript'], '/qr.mjs':['qr.mjs','text/javascript'], '/vendor/qrcodegen.js':['vendor/qrcodegen.js','text/javascript'] };
-export function createApp(dbPath = fileURLToPath(new URL('./data/lot-rot.sqlite',import.meta.url)), authPath) {
-  const authenticate=authPath ? createAuth(authPath, process.env.LOT_ROT_PASSWORD_SETUP) : null;
-  const store = openStore(dbPath);
-  const cleanup=()=>{try{store.purgeSoldHistory();}catch(error){console.error('Sold-history cleanup failed:',error.message);}};
+export function createApp(dbPath = fileURLToPath(new URL('./data/lot-rot.sqlite',import.meta.url)), authPath, options={}) {
+  const dealerships=options.dealerships ?? process.env.LOT_ROT_DEALERSHIPS==='1';
+  const authenticate=authPath ? (dealerships ? createDealershipAuth(authPath,process.env.LOT_ROT_DEFAULT_COMPANY || 'Freedom RV',process.env.LOT_ROT_PASSWORD_SETUP) : createAuth(authPath, process.env.LOT_ROT_PASSWORD_SETUP)) : null;
+  const primaryStore = openStore(dbPath), stores=new Map([['primary',primaryStore]]);
+  if(dealerships)for(const file of readdirSync(dirname(dbPath))){
+    const prefix=basename(dbPath)+'.company-';
+    if(file.startsWith(prefix) && file.endsWith('.sqlite')){
+      const id=file.slice(prefix.length,-7);
+      if(/^[a-f0-9-]{36}$/i.test(id))stores.set(id,openStore(resolve(dirname(dbPath),file)));
+    }
+  }
+  const cleanup=()=>{for(const store of stores.values())try{store.purgeSoldHistory();}catch(error){console.error('Sold-history cleanup failed:',error.message);}};
   cleanup();const cleanupTimer=setInterval(cleanup,3600000);cleanupTimer.unref();
   const server = http.createServer(async (req,res)=> {
     const json = (status,value)=> { res.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'}); res.end(JSON.stringify(value)); };
     try {
       if(req.url==='/healthz' && req.method==='GET') return json(200,{status:'ok'});
       if(authenticate && await authenticate(req,res)) return;
+      let store=primaryStore;
+      if(dealerships && req.company && req.company.id!==req.defaultCompanyId){
+        if(!/^[a-f0-9-]{36}$/i.test(req.company.id))throw new StoreError(403,'Invalid dealership.');
+        if(!stores.has(req.company.id))stores.set(req.company.id,openStore(dbPath+'.company-'+req.company.id+'.sqlite'));
+        store=stores.get(req.company.id);
+      }
       const path = new URL(req.url,'http://localhost').pathname;
+      if(req.employee?.role==='employee' && ['POST','PUT','DELETE'].includes(req.method) && !/^\/api\/(?:units\/[a-f0-9-]{36}\/trips\/(?:departure|return|note)|trips\/[a-f0-9-]{36}\/points)$/i.test(path))throw new StoreError(403,'Only dealership administrators can add, edit, import, or mark units sold.');
       if(path==='/api/me' && req.method==='GET')return json(200,{employee:req.employee || null,company:req.company || null});
       if(path==='/save-unit' && req.method==='POST') {
         let input, destination='new';
@@ -80,7 +97,7 @@ export function createApp(dbPath = fileURLToPath(new URL('./data/lot-rot.sqlite'
       res.end(body);
     } catch(error) { console.error(error.message); json(error.status || 500,{message:error.status ? error.message : 'The server could not save or load data. Please try again.',errors:error.errors || {}}); }
   });
-  server.on('close',()=>{clearInterval(cleanupTimer);store.close();});
+  server.on('close',()=>{clearInterval(cleanupTimer);for(const store of stores.values())store.close();});
   return server;
 }
 if (process.argv[1] && resolve(process.argv[1])===fileURLToPath(import.meta.url)) {
