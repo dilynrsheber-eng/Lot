@@ -1,0 +1,8 @@
+data/
+account.json
+.env
+.env.*
+node_modules/
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
