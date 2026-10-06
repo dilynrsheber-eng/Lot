@@ -39,3 +39,5 @@ header{justify-content:flex-start}header .badge{margin-left:auto}.home-page head
 #walk-controls[hidden],#walk-camera-panel[hidden]{display:none!important}#walk-video{width:100%;max-height:360px;object-fit:cover;border-radius:12px}#walk-controls button{margin:10px 0}#walk-manual{margin:20px 0}
 
 .drive-step[hidden],#drive-back[hidden],#drive-next[hidden],#drive-submit[hidden]{display:none!important}#trip-form .condition-photo-grid{display:block}#trip-form .actions{flex-wrap:wrap}
+
+.home-logo,.brand-image{object-fit:contain}.home-logo{height:auto}.brand-image{height:auto}
