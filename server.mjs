@@ -7,7 +7,7 @@ import { createAuth } from './auth.mjs';
 import { initializeAuth } from './bootstrap-auth.mjs';
 const files = { '/trips.mjs':['trips.mjs','text/javascript'], '/drafts.mjs':['drafts.mjs','text/javascript'], '/api-client.mjs':['api-client.mjs','text/javascript'], '/assets/lot-rot-logo.jpg':['assets/lot-rot-logo.jpg','image/jpeg'], '/': ['index.html','text/html'], '/styles.css':['styles.css','text/css'], '/app.mjs':['app.mjs','text/javascript'], '/domain.mjs':['domain.mjs','text/javascript'], '/qr.mjs':['qr.mjs','text/javascript'], '/vendor/qrcodegen.js':['vendor/qrcodegen.js','text/javascript'] };
 export function createApp(dbPath = fileURLToPath(new URL('./data/lot-rot.sqlite',import.meta.url)), authPath) {
-  const authenticate=authPath ? createAuth(authPath) : null;
+  const authenticate=authPath ? createAuth(authPath, process.env.LOT_ROT_PASSWORD_SETUP) : null;
   const store = openStore(dbPath);
   const cleanup=()=>{try{store.purgeSoldHistory();}catch(error){console.error('Sold-history cleanup failed:',error.message);}};
   cleanup();const cleanupTimer=setInterval(cleanup,3600000);cleanupTimer.unref();
