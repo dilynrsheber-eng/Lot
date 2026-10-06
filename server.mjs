@@ -6,6 +6,7 @@ import { resolve, dirname, basename } from 'node:path';
 import { openStore, StoreError } from './store.mjs';
 import { createAuth } from './auth.mjs';
 import { createDealershipAuth } from './dealership-auth.mjs';
+import { gpsMileage } from './mileage.mjs';
 import { initializeAuth } from './bootstrap-auth.mjs';
 const files = { "/vendor/jsQR.js":["vendor/jsQR.js","text/javascript"], '/trips.mjs':['trips.mjs','text/javascript'], '/drafts.mjs':['drafts.mjs','text/javascript'], '/api-client.mjs':['api-client.mjs','text/javascript'], '/assets/lot-rot-logo.jpg':['assets/lot-rot-logo.jpg','image/jpeg'], '/': ['index.html','text/html'], '/styles.css':['styles.css','text/css'], '/app.mjs':['app.mjs','text/javascript'], '/domain.mjs':['domain.mjs','text/javascript'], '/qr.mjs':['qr.mjs','text/javascript'], '/vendor/qrcodegen.js':['vendor/qrcodegen.js','text/javascript'] };
 export function createApp(dbPath = fileURLToPath(new URL('./data/lot-rot.sqlite',import.meta.url)), authPath, options={}) {
@@ -57,7 +58,7 @@ export function createApp(dbPath = fileURLToPath(new URL('./data/lot-rot.sqlite'
         const movement=path.match(/^\/api\/units\/([a-f0-9-]{36})\/trips(?:\/(departure|return|note))?$/i);
         const coordinates=path.match(/^\/api\/trips\/([a-f0-9-]{36})\/points$/i);
         if (req.method==='GET') {
-          if(movement && !movement[2])return json(200,{events:store.events(movement[1]),active:store.active(movement[1]) || null});
+          if(movement && !movement[2])return json(200,{events:store.events(movement[1]).map(e=>e.kind==='return'?{...e,mileage:gpsMileage(store.points(e.tripId))}:e),active:store.active(movement[1]) || null});
           if(coordinates)return json(200,store.points(coordinates[1]));
           const tripPhoto=path.match(/^\/api\/trip-photos\/([a-f0-9-]{36})$/i);
           if(tripPhoto){const image=store.getTripPhoto(tripPhoto[1]);if(!image)return json(404,{message:'Photo not found.'});res.writeHead(200,{'Content-Type':image.photoType,'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});res.end(image.photo);return;}
