@@ -29,3 +29,5 @@ header{justify-content:flex-start}header .badge{margin-left:auto}.home-page head
 .employee-role a[href="#new"],.employee-role a[href^="#edit/"],.employee-role .unit-sale{display:none!important}
 
 #trip-form[hidden],#drive-action[hidden],#start-gps[hidden]{display:none!important}
+
+.release-label{display:flex;flex-direction:column;align-items:center;gap:5px;margin-left:auto;flex-shrink:0}.release-label .badge{margin-left:0}.patent-label{font-size:10px;white-space:nowrap;color:inherit}.home-page .release-label .badge{display:block}
