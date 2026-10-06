@@ -1,0 +1,64 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { mkdtemp, mkdir, rm } from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
+import { join } from 'node:path';
+import { once } from 'node:events';
+import { createApp } from '../server.mjs';
+import { searchUnits } from '../domain.mjs';
+import { unitLink } from '../qr.mjs';
+const photoData='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=';
+const valid={year:'2018',make:'Jayco',model:'Eagle',color:'White',stockNumber:'TEST-1',vin:'1HGCM82633A004352',photoData};
+test('shared clients, QR lookup, concurrency, atomic photos/import and restart durability',async()=>{
+  const testRoot=fileURLToPath(new URL('../../../work/',import.meta.url));await mkdir(testRoot,{recursive:true});
+  const dir=await mkdtemp(join(testRoot,'lot-rot-test-')),db=join(dir,'inventory.sqlite');
+  let server;
+  async function start(){server=createApp(db);server.listen(0,'0.0.0.0');await once(server,'listening');return server.address().port;}
+  async function stop(){await new Promise(resolve=>server.close(resolve));}
+  let port=await start();
+  const client=(host,path,method='GET',body)=>fetch(`http://${host}:${port}${path}`,{method,headers:body===undefined?{}:{'Content-Type':'application/json'},body:body===undefined?undefined:JSON.stringify(body)});
+  try {
+    let response=await client('localhost','/api/units','POST',{...valid,vin:'bad'});assert.equal(response.status,422);
+    const simultaneous=await Promise.all([client('localhost','/api/units','POST',valid),client('127.0.0.1','/api/units','POST',valid)]);
+    assert.deepEqual(simultaneous.map(r=>r.status).sort(),[201,422]);
+    const record=await simultaneous.find(r=>r.status===201).json();
+    const html=await (await client('localhost','/')).text();
+    const embedded=html.match(/<script type="application\/json" id="initial-inventory">([\s\S]*?)<\/script>/);
+    assert.equal(JSON.parse(embedded[1])[0].id,record.id);
+    const list=await (await client('127.0.0.1','/api/units')).json();assert.equal(list.length,1);
+    for(const field of ['year','make','model','color','stockNumber','vin']) assert.equal(searchUnits(list,record[field]).length,1);
+    const link=new URL(unitLink(`http://127.0.0.1:${port}/`,record.id));
+    assert.equal(link.hash,`#unit/${record.id}`);
+    assert.equal((await (await client('127.0.0.1',`/api/units/${record.id}`)).json()).photoUrl,record.photoUrl);
+    const pixels=await (await client('127.0.0.1',record.photoUrl)).arrayBuffer();assert.deepEqual(Buffer.from(pixels),Buffer.from(photoData.split(',')[1],'base64'));
+    response=await client('127.0.0.1',`/api/units/${record.id}`,'PUT',{...record,color:'Silver'});assert.equal(response.status,200);const edited=await response.json();
+    assert.equal((await client('localhost',`/api/units/${record.id}`,'PUT',{...record,color:'Blue'})).status,409);
+    assert.equal((await client('localhost',`/api/units/${record.id}`,'PUT',{...edited,photoData:'data:image/png;base64,aGVsbG8='})).status,422);
+    assert.equal((await client('localhost','/api/units','POST',{...valid,stockNumber:'TEST-2',vin:'1HGCM82633A004353',photoData:'data:image/svg+xml;base64,PHN2Zz4='})).status,422);
+    const imported={...valid,stockNumber:'IMPORT-1',vin:'1HGCM82633A004354',id:'aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa'};
+    imported.model='</script><script>alert(1)</script>';
+    assert.equal((await client('localhost','/api/import','POST',[imported,{...valid,id:'bbbbbbbb-bbbb-4bbb-bbbb-bbbbbbbbbbbb'}])).status,409);
+    assert.equal((await (await client('localhost','/api/units')).json()).length,1);
+    assert.equal((await client('localhost','/api/import','POST',[imported])).status,200);
+    const safeHtml=await (await client('localhost','/')).text();
+    assert.ok(!safeHtml.includes(imported.model));
+    const safeEmbedded=JSON.parse(safeHtml.match(/id="initial-inventory">([\s\S]*?)<\/script>/)[1]);
+    assert.equal(safeEmbedded.find(u=>u.id===imported.id).model,imported.model);
+    assert.deepEqual(await (await client('localhost','/api/import','POST',[imported])).json(),{imported:0,skipped:1});
+    assert.equal((await client('localhost','/api/units','POST',valid)).status,422);
+    await stop();port=await start();
+    const persisted=await (await client('127.0.0.1',`/api/units/${record.id}`)).json();assert.equal(persisted.color,'Silver');assert.equal(persisted.version,2);
+    assert.deepEqual(Buffer.from(await (await client('127.0.0.1',persisted.photoUrl)).arrayBuffer()),Buffer.from(pixels));
+    assert.equal((await client('localhost','/data/lot-rot.sqlite')).status,404);
+    const origin=`http://127.0.0.1:${port}`;
+    const formRecord={...valid,stockNumber:'FORM-1',vin:'1HGCM82633A004355'};
+    const submit=(record,id='')=>fetch(`${origin}/save-unit`,{method:'POST',redirect:'manual',headers:{'Content-Type':'application/x-www-form-urlencoded',Origin:origin},body:new URLSearchParams({record:JSON.stringify(record),action:'tag',id})});
+    const result=await submit(formRecord);assert.equal(result.status,303);assert.match(result.headers.get('location'),/#tag\/[a-f0-9-]{36}/);
+    const formId=result.headers.get('location').split('#tag/')[1];
+    const saved=await (await client('127.0.0.1',`/api/units/${formId}`)).json();assert.ok(saved.photoUrl);
+    assert.match((await submit(formRecord)).headers.get('location'),/saveError=/);
+    assert.equal((await (await client('localhost','/api/units')).json()).filter(u=>u.stockNumber==='FORM-1').length,1);
+    const updateResult=await submit({...saved,color:'Orange'},formId);assert.match(updateResult.headers.get('location'),/#tag\//);
+    assert.equal((await (await client('localhost',`/api/units/${formId}`)).json()).color,'Orange');
+  } finally {await stop();await rm(dir,{recursive:true,force:true});}
+});
