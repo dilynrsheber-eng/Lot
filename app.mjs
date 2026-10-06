@@ -1,3 +1,4 @@
+import { clearRouteMaps } from './route-map.mjs';
 import { showTrips } from './trips.mjs';
 import { draft as deviceDraft } from './drafts.mjs';
 import { requestJson } from './api-client.mjs?v=save5';
@@ -30,6 +31,7 @@ async function load() {
 const title = u => `${escape(u.year)} ${escape(u.make)} ${escape(u.model)}`;
 let stopScan = () => {};
 function render() {
+  clearRouteMaps();
   stopScan();
   const [page, id] = location.hash.slice(1).split('/');
   if(currentProfile?.employee?.role==='employee' && ['new','edit'].includes(page)){app.innerHTML='<div class="panel"><h1>Administrator access required</h1><p>Your dealership administrator manages unit details. You can view inventory and record departures and returns.</p><a href="#home">Back to home</a></div>';return;}
