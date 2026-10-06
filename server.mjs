@@ -8,7 +8,7 @@ import { createAuth } from './auth.mjs';
 import { createDealershipAuth } from './dealership-auth.mjs';
 import { gpsMileage } from './mileage.mjs';
 import { initializeAuth } from './bootstrap-auth.mjs';
-const files = { "/route-map.mjs":["route-map.mjs","text/javascript"], "/mileage.mjs":["mileage.mjs","text/javascript"], "/vendor/leaflet.js":["vendor/leaflet.js","text/javascript"], "/vendor/leaflet.css":["vendor/leaflet.css","text/css"], "/vendor/jsQR.js":["vendor/jsQR.js","text/javascript"], '/trips.mjs':['trips.mjs','text/javascript'], '/drafts.mjs':['drafts.mjs','text/javascript'], '/api-client.mjs':['api-client.mjs','text/javascript'], '/assets/lot-rot-logo.jpg':['assets/lot-rot-logo.jpg','image/jpeg'], '/': ['index.html','text/html'], '/styles.css':['styles.css','text/css'], '/app.mjs':['app.mjs','text/javascript'], '/domain.mjs':['domain.mjs','text/javascript'], '/qr.mjs':['qr.mjs','text/javascript'], '/vendor/qrcodegen.js':['vendor/qrcodegen.js','text/javascript'] };
+const files = { "/geofence.mjs":["geofence.mjs","text/javascript"], "/route-map.mjs":["route-map.mjs","text/javascript"], "/mileage.mjs":["mileage.mjs","text/javascript"], "/vendor/leaflet.js":["vendor/leaflet.js","text/javascript"], "/vendor/leaflet.css":["vendor/leaflet.css","text/css"], "/vendor/jsQR.js":["vendor/jsQR.js","text/javascript"], '/trips.mjs':['trips.mjs','text/javascript'], '/drafts.mjs':['drafts.mjs','text/javascript'], '/api-client.mjs':['api-client.mjs','text/javascript'], '/assets/lot-rot-logo.jpg':['assets/lot-rot-logo.jpg','image/jpeg'], '/': ['index.html','text/html'], '/styles.css':['styles.css','text/css'], '/app.mjs':['app.mjs','text/javascript'], '/domain.mjs':['domain.mjs','text/javascript'], '/qr.mjs':['qr.mjs','text/javascript'], '/vendor/qrcodegen.js':['vendor/qrcodegen.js','text/javascript'] };
 export function createApp(dbPath = fileURLToPath(new URL('./data/lot-rot.sqlite',import.meta.url)), authPath, options={}) {
   const dealerships=options.dealerships ?? process.env.LOT_ROT_DEALERSHIPS==='1';
   const authenticate=authPath ? (dealerships ? createDealershipAuth(authPath,process.env.LOT_ROT_DEFAULT_COMPANY || 'Freedom RV',process.env.LOT_ROT_PASSWORD_SETUP) : createAuth(authPath, process.env.LOT_ROT_PASSWORD_SETUP)) : null;
@@ -78,13 +78,13 @@ export function createApp(dbPath = fileURLToPath(new URL('./data/lot-rot.sqlite'
         let body; try { body=JSON.parse(raw); } catch { throw new StoreError(400,'Invalid JSON.'); }
         if(movement && movement[2] && req.method==='POST'){
           if(!req.employee)throw new StoreError(401,'Sign in with an individual employee account before recording a trip or correction.');
-          return json(201,store.event(movement[1],movement[2],{...body,requireFourPhotos:true,employee:req.employee.name,employeeId:req.employee.id,employeeEmail:req.employee.email}));
+          const saved=store.event(movement[1],movement[2],{...body,requireFourPhotos:true,requireDestination:true,employee:req.employee.name,employeeId:req.employee.id,employeeEmail:req.employee.email});return json(201,{...saved,unit:store.get(movement[1])});
         }
         if(coordinates && req.method==='POST'){
           if(!req.employee)throw new StoreError(401,'Sign in with an individual employee account before recording GPS.');
           return json(201,store.point(coordinates[1],body));
         }
-        const locationMatch=path.match(/^\/api\/locations\/([a-f0-9-]{36})$/i);if(locationMatch && req.method==='PUT')return json(200,store.renameLocation(locationMatch[1],body.name));
+        const locationMatch=path.match(/^\/api\/locations\/([a-f0-9-]{36})$/i);if(locationMatch && req.method==='PUT')return json(200,store.renameLocation(locationMatch[1],body.name,body));
         if(path==='/api/locations' && req.method==='POST')return json(201,store.addLocation(body.name));
         if (path==='/api/units' && req.method==='POST') return json(201,store.create(body));
         if (path==='/api/import' && req.method==='POST') return json(200,store.importUnits(body));
