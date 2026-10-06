@@ -1,18 +1,10 @@
-# Railway deployment preparation
+# Railway deployment
 
-Status: deployment files prepared; no Railway project created or published yet.
+Project: Lot Rot App (d4e2b84c-c466-4a8a-9e73-05b37153a082).
+Service: Lot Rot (4facf0da-6028-4a7d-9331-04a0b8ef0495).
+Source: https://github.com/dilynrsheber-eng/Lot, main branch, repository root.
+Public URL: https://lot-rot-production.up.railway.app
 
-Use outputs/lot-rot as the build/source root. Docker image runs Node 24 and uses Railway's PORT. Mount a persistent volume at /data for the inventory database, reference photos stored in the database, and persistent login session configuration. Run one app replica. Do not upload local account.json, passwords, SQLite files, or draft/browser data into the source repository or Docker image.
+One replica with a 500 MB volume at /data. SQLite includes reference photos, trip photos and GPS records. Password hashes and sessions persist in /data/account.json; LOT_ROT_INITIAL_ACCOUNT initializes it only when missing. No local inventory or credentials are committed to GitHub. Never use --email-gated-tunnel in production.
 
-Health check: /healthz, returns status only, with no inventory or session data. Production startup currently requires /data/account.json; missing configuration fails startup rather than exposing inventory. Never use --email-gated-tunnel on Railway: it is only for the locally protected temporary tunnel.
-
-Remaining before publication:
-
-- Railway connection/tools must be available in the chat and the intended workspace selected.
-- Finish app email-code authentication with a configured email delivery provider. The existing Cloudflare quick-tunnel email gate cannot be transferred to Railway. Current Docker preparation deliberately does not bypass authentication.
-- Create one app service and persistent /data volume, set up a public HTTPS domain, and configure email delivery secrets securely.
-- Configure and verify volume backups and a database restore. Backups are not enabled by these source files. Choose retention and account for storage cost.
-- Validate authenticated phone creation, photo upload, editing, QR link, sign-out, and persistence after a redeploy before declaring the migration complete.
-- User review of the concrete paid resource setup before launching it; Railway Hobby is a $5 monthly minimum and resource usage can exceed it.
-
-There are only labeled demo units in the current local inventory. Existing device drafts are tied to their previous tunnel/browser origin and do not move to the Railway domain automatically.
+HTTPS sign-in, unauthenticated API rejection, profile identity, photo upload and save-and-generate-QR redirect verified. Remaining: real-phone trial, backup scheduling and restore validation, individual employee accounts, and native background GPS. Automatic volume backups are not yet configured.
