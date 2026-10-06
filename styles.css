@@ -33,3 +33,5 @@ header{justify-content:flex-start}header .badge{margin-left:auto}.home-page head
 .release-label{display:flex;flex-direction:column;align-items:center;gap:5px;margin-left:auto;flex-shrink:0}.release-label .badge{margin-left:0}.patent-label{font-size:10px;white-space:nowrap;color:inherit}.home-page .release-label .badge{display:block}
 
 .drive-route-map{height:340px;width:100%;border-radius:12px;margin-top:16px;isolation:isolate}.drive-route-map .leaflet-control-attribution a{color:#0877bb}.drive-route-map .leaflet-control-zoom a{min-height:0}@media(max-width:600px){.drive-route-map{height:300px}}
+
+.condition-photo-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;border:0;padding:0;margin:20px 0}.condition-photo-grid figure{margin:0}.condition-photo-grid img{width:100%;max-height:220px;object-fit:contain}.condition-photo-grid input{min-width:0}.row-location{font-size:13px}@media(max-width:600px){.condition-photo-grid{grid-template-columns:1fr}.inventory-row{flex-wrap:wrap}}

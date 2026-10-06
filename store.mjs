@@ -19,7 +19,8 @@ export function openStore(path) {
     CREATE UNIQUE INDEX IF NOT EXISTS one_departure ON trip_events(tripId) WHERE kind='departure';
     CREATE UNIQUE INDEX IF NOT EXISTS one_return ON trip_events(tripId) WHERE kind='return';`);
   let retentionMode=false;db.function('retention_allowed',()=>retentionMode ? 1 : 0);
-  for(const table of ['trip_events','trip_points']) {
+  db.exec('CREATE TABLE IF NOT EXISTS condition_photos(eventId TEXT NOT NULL, angle TEXT NOT NULL, photo BLOB NOT NULL, photoType TEXT NOT NULL, PRIMARY KEY(eventId,angle)); CREATE TABLE IF NOT EXISTS locations(id TEXT PRIMARY KEY,name TEXT NOT NULL COLLATE NOCASE UNIQUE); CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY,value TEXT);');
+  for(const table of ['trip_events','trip_points','condition_photos']) {
     db.exec(`DROP TRIGGER IF EXISTS ${table}_delete; CREATE TRIGGER IF NOT EXISTS ${table}_update BEFORE UPDATE ON ${table} BEGIN SELECT RAISE(ABORT,'Trip history is append-only'); END;`);
     db.exec(`CREATE TRIGGER ${table}_delete BEFORE DELETE ON ${table} WHEN retention_allowed()=0 BEGIN SELECT RAISE(ABORT,'Trip history is append-only'); END;`);
   }
@@ -28,8 +29,14 @@ export function openStore(path) {
   if (!columns.includes('photo')) db.exec('ALTER TABLE units ADD COLUMN photo BLOB; ALTER TABLE units ADD COLUMN photoType TEXT;');
   if(!columns.includes('soldAt'))db.exec('ALTER TABLE units ADD COLUMN soldAt TEXT;');
   if(!columns.includes('historyPurgedAt'))db.exec('ALTER TABLE units ADD COLUMN historyPurgedAt TEXT;');
-  const select = 'id,year,make,model,color,stockNumber,vin,createdAt,updatedAt,version,photoType,soldAt,historyPurgedAt';
-  const decorate = u => u ? {...u,photoUrl:u.photoType ? `/api/photos/${u.id}?v=${u.version}` : null} : undefined;
+  if(!columns.includes('locationId'))db.exec('ALTER TABLE units ADD COLUMN locationId TEXT;');
+  const locations=()=>db.prepare('SELECT id,name FROM locations ORDER BY name COLLATE NOCASE').all();
+  const addLocation=name=>{name=typeof name==='string'?name.trim():'';if(!name||name.length>100)throw new StoreError(422,'Enter a location name up to 100 characters.');const found=locations().find(l=>l.name.toLowerCase()===name.toLowerCase());if(found)return found;const id=randomUUID();db.prepare('INSERT INTO locations VALUES (?,?)').run(id,name);return {id,name};};
+  const renameLocation=(id,name)=>{if(!locations().some(l=>l.id===id))throw new StoreError(404,'Location not found.');name=typeof name==='string'?name.trim():'';if(!name||name.length>100)throw new StoreError(422,'Enter a location name up to 100 characters.');if(locations().some(l=>l.id!==id&&l.name.toLowerCase()===name.toLowerCase()))throw new StoreError(409,'That location name already exists.');db.prepare('UPDATE locations SET name=? WHERE id=?').run(name,id);return {id,name};};
+  const seedLocations=names=>{if(!db.prepare("SELECT value FROM settings WHERE key='locations-seeded'").get()){for(const name of names)addLocation(name);db.prepare("INSERT INTO settings VALUES ('locations-seeded','1')").run();}};
+  const locationOf=(input,old)=>{const id=input.locationId===undefined?(old?.locationId||null):input.locationId||null;if(id&&!locations().some(l=>l.id===id))throw new StoreError(422,'Choose a location belonging to this dealership.',{locationId:'Choose an existing dealership location.'});return id;};
+  const select = 'locationId,id,year,make,model,color,stockNumber,vin,createdAt,updatedAt,version,photoType,soldAt,historyPurgedAt';
+  const decorate = u => u ? {...u,location:locations().find(l=>l.id===u.locationId)?.name || '',photoUrl:u.photoType ? `/api/photos/${u.id}?v=${u.version}` : null} : undefined;
   const list = () => db.prepare(`SELECT ${select} FROM units ORDER BY createdAt DESC, id`).all().map(decorate);
   const get = id => decorate(db.prepare(`SELECT ${select} FROM units WHERE id = ?`).get(id));
   function photo(input) {
@@ -52,9 +59,9 @@ export function openStore(path) {
   }
   function create(input, preservedId) {
     const unit = validate(input);
-    const image = photo(input);
+    const image = photo(input),locationId=locationOf(input);
     const id = preservedId || randomUUID(), now = new Date().toISOString();
-    db.prepare('INSERT INTO units (id,year,make,model,color,stockNumber,vin,createdAt,updatedAt,photo,photoType) VALUES (?,?,?,?,?,?,?,?,?,?,?)').run(id,...FIELDS.map(k=>unit[k]),now,now,image?.bytes || null,image?.type || null);
+    db.prepare('INSERT INTO units (id,year,make,model,color,stockNumber,vin,createdAt,updatedAt,photo,photoType,locationId) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)').run(id,...FIELDS.map(k=>unit[k]),now,now,image?.bytes || null,image?.type || null,locationId);
     return get(id);
   }
   function update(id,input) {
@@ -62,8 +69,8 @@ export function openStore(path) {
     if (!old) throw new StoreError(404,'Unit not found.');
     if (!input || input.version !== old.version) throw new StoreError(409,'Another device changed this unit. Open the latest details before editing again.');
     const unit = validate(input,id);
-    const image=photo(input);
-    db.prepare(`UPDATE units SET year=?,make=?,model=?,color=?,stockNumber=?,vin=?,updatedAt=?,version=version+1 ${image ? ',photo=?,photoType=?' : ''} WHERE id=?`).run(...FIELDS.map(k=>unit[k]),new Date().toISOString(),...(image ? [image.bytes,image.type] : []),id);
+    const image=photo(input),locationId=locationOf(input,old);
+    db.prepare(`UPDATE units SET year=?,make=?,model=?,color=?,stockNumber=?,vin=?,locationId=?,updatedAt=?,version=version+1 ${image ? ',photo=?,photoType=?' : ''} WHERE id=?`).run(...FIELDS.map(k=>unit[k]),locationId,new Date().toISOString(),...(image ? [image.bytes,image.type] : []),id);
     return get(id);
   }
   function importUnits(records) {
@@ -83,7 +90,7 @@ export function openStore(path) {
       db.exec('COMMIT'); return {imported,skipped};
     } catch(error) { db.exec('ROLLBACK'); throw error; }
   }
-  const events=unitId=>db.prepare('SELECT id,unitId,tripId,kind,employee,employeeId,employeeEmail,reason,notes,createdAt,photoType FROM trip_events WHERE unitId=? ORDER BY rowid').all(unitId).map(e=>({...e,photoUrl:e.photoType ? `/api/trip-photos/${e.id}` : null}));
+  const events=unitId=>db.prepare('SELECT id,unitId,tripId,kind,employee,employeeId,employeeEmail,reason,notes,createdAt,photoType FROM trip_events WHERE unitId=? ORDER BY rowid').all(unitId).map(e=>({...e,conditionPhotos:db.prepare('SELECT angle FROM condition_photos WHERE eventId=?').all(e.id).map(p=>({angle:p.angle,url:`/api/trip-photos/${e.id}/${p.angle}`})),photoUrl:e.photoType ? `/api/trip-photos/${e.id}` : null}));
   const active=unitId=>events(unitId).find(e=>e.kind==='departure' && !events(unitId).some(r=>r.tripId===e.tripId && r.kind==='return'));
   function event(unitId,kind,input) {
     if(!get(unitId))throw new StoreError(404,'Unit not found.');
@@ -91,7 +98,10 @@ export function openStore(path) {
     if(!input || !['departure','return','note'].includes(kind))throw new StoreError(422,'Invalid trip event.');
     const text=(key,max,required=true)=>{const value=typeof input[key]==='string' ? input[key].trim() : '';if((required && !value)||value.length>max)throw new StoreError(422,`Enter ${key} up to ${max} characters.`);return value;};
     const employee=text('employee',100),reason=text('reason',100,kind==='departure'),notes=text('notes',2000,kind==='note');
-    const image=kind==='note' ? null : photo(input);if(kind!=='note' && !image)throw new StoreError(422,'A condition photo is required.');
+    const angles=['driverFront','passengerFront','passengerRear','driverRear'];
+    const images=kind==='note'?[]:input.conditionPhotos ? angles.map(angle=>{const image=photo({photoData:input.conditionPhotos[angle]});if(!image)throw new StoreError(422,'All four condition photos are required.');return {angle,...image};}):[];
+    if(kind!=='note' && input.requireFourPhotos && images.length!==4)throw new StoreError(422,'All four condition photos are required.');
+    const image=kind==='note' ? null : (images[0] || photo(input));if(kind!=='note' && !image)throw new StoreError(422,'A condition photo is required.');
     db.exec('BEGIN IMMEDIATE');try {
       const current=active(unitId);
       if(kind==='departure' && current)throw new StoreError(409,'This unit already has an active trip.');
@@ -99,6 +109,7 @@ export function openStore(path) {
       if(kind==='note' && !events(unitId).some(e=>e.tripId===input.tripId))throw new StoreError(404,'Trip not found.');
       const tripId=kind==='departure' ? randomUUID() : input.tripId,id=randomUUID();
       db.prepare('INSERT INTO trip_events (id,unitId,tripId,kind,employee,reason,notes,createdAt,photo,photoType,employeeId,employeeEmail) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)').run(id,unitId,tripId,kind,employee,reason,notes,new Date().toISOString(),image?.bytes || null,image?.type || null,input.employeeId || null,input.employeeEmail || null);
+      for(const image of images)db.prepare('INSERT INTO condition_photos VALUES (?,?,?,?)').run(id,image.angle,image.bytes,image.type);
       db.exec('COMMIT');return events(unitId).find(e=>e.id===id);
     }catch(e){db.exec('ROLLBACK');throw e;}
   }
@@ -124,6 +135,7 @@ export function openStore(path) {
       retentionMode=true;
       for(const unit of eligible){if(active(unit.id))continue;
         db.prepare('DELETE FROM trip_points WHERE tripId IN (SELECT tripId FROM trip_events WHERE unitId=?)').run(unit.id);
+        db.prepare('DELETE FROM condition_photos WHERE eventId IN (SELECT id FROM trip_events WHERE unitId=?)').run(unit.id);
         db.prepare('DELETE FROM trip_events WHERE unitId=?').run(unit.id);
         db.prepare('UPDATE units SET historyPurgedAt=?,updatedAt=?,version=version+1 WHERE id=?').run(new Date(now).toISOString(),new Date(now).toISOString(),unit.id);purged++;
       }
@@ -131,5 +143,5 @@ export function openStore(path) {
     }catch(e){db.exec('ROLLBACK');throw e;}finally{retentionMode=false;}
     if(purged)db.exec('VACUUM; PRAGMA wal_checkpoint(TRUNCATE)');return {purged};
   }
-  return {list,get,create,update,importUnits,setSold,purgeSoldHistory,events,active,event,point,points:tripId=>db.prepare('SELECT latitude,longitude,accuracy,recordedAt,receivedAt FROM trip_points WHERE tripId=? ORDER BY rowid').all(tripId),getTripPhoto:id=>db.prepare('SELECT photo,photoType FROM trip_events WHERE id=? AND photo IS NOT NULL').get(id),getPhoto:id=>db.prepare('SELECT photo,photoType FROM units WHERE id=? AND photo IS NOT NULL').get(id),close:()=>db.close()};
+  return {locations,addLocation,renameLocation,seedLocations,list,get,create,update,importUnits,setSold,purgeSoldHistory,events,active,event,point,points:tripId=>db.prepare('SELECT latitude,longitude,accuracy,recordedAt,receivedAt FROM trip_points WHERE tripId=? ORDER BY rowid').all(tripId),getTripPhoto:(id,angle)=>angle?db.prepare('SELECT photo,photoType FROM condition_photos WHERE eventId=? AND angle=?').get(id,angle):db.prepare('SELECT photo,photoType FROM trip_events WHERE id=? AND photo IS NOT NULL').get(id),getPhoto:id=>db.prepare('SELECT photo,photoType FROM units WHERE id=? AND photo IS NOT NULL').get(id),close:()=>db.close()};
 }

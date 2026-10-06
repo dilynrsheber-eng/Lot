@@ -27,7 +27,7 @@ test('dealership isolation, administrator invitations, locked employee identity 
   assert.equal((await post('/join',{email:'pat@example.com',code,password:p,confirm:p})).status,401);
   const employee=await login('pat@example.com',p);assert.equal((await get('/team',employee)).status,403);assert.equal((await post('/api/units',record,employee,true)).status,403);
   const photoData='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=';
-  const trip=await (await post(`/api/units/${a.id}/trips/departure`,{employee:'Forged',reason:'Service',photoData},employee,true)).json();assert.equal(trip.employee,'Pat Employee');assert.equal(trip.employeeEmail,'pat@example.com');
+  const trip=await (await post(`/api/units/${a.id}/trips/departure`,{employee:'Forged',reason:'Service',conditionPhotos:Object.fromEntries(['driverFront','passengerFront','passengerRear','driverRear'].map(angle=>[angle,photoData]))},employee,true)).json();assert.equal(trip.employee,'Pat Employee');assert.equal(trip.employeeEmail,'pat@example.com');
   assert.equal((await get('/api/trip-photos/'+trip.id,second)).status,404);
   const otherHistory=await (await get(`/api/units/${a.id}/trips`,second)).json();assert.deepEqual(otherHistory.events,[]);
   assert.equal((await post('/team',{name:'Other',email:'pat@example.com'},second)).status,409);

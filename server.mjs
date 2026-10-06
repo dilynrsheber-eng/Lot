@@ -33,6 +33,7 @@ export function createApp(dbPath = fileURLToPath(new URL('./data/lot-rot.sqlite'
         if(!stores.has(req.company.id))stores.set(req.company.id,openStore(dbPath+'.company-'+req.company.id+'.sqlite'));
         store=stores.get(req.company.id);
       }
+      if(req.company?.name==='Freedom RV')store.seedLocations(['SV2','Irvington','Ina']);
       const path = new URL(req.url,'http://localhost').pathname;
       if(req.employee?.role==='employee' && ['POST','PUT','DELETE'].includes(req.method) && !/^\/api\/(?:units\/[a-f0-9-]{36}\/trips\/(?:departure|return|note)|trips\/[a-f0-9-]{36}\/points)$/i.test(path))throw new StoreError(403,'Only dealership administrators can add, edit, import, or mark units sold.');
       if(path==='/api/me' && req.method==='GET')return json(200,{employee:req.employee || null,company:req.company || null});
@@ -60,10 +61,11 @@ export function createApp(dbPath = fileURLToPath(new URL('./data/lot-rot.sqlite'
         if (req.method==='GET') {
           if(movement && !movement[2])return json(200,{events:store.events(movement[1]).map(e=>e.kind==='return'?{...e,mileage:gpsMileage(store.points(e.tripId))}:e),active:store.active(movement[1]) || null});
           if(coordinates)return json(200,store.points(coordinates[1]));
-          const tripPhoto=path.match(/^\/api\/trip-photos\/([a-f0-9-]{36})$/i);
-          if(tripPhoto){const image=store.getTripPhoto(tripPhoto[1]);if(!image)return json(404,{message:'Photo not found.'});res.writeHead(200,{'Content-Type':image.photoType,'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});res.end(image.photo);return;}
+          const tripPhoto=path.match(/^\/api\/trip-photos\/([a-f0-9-]{36})(?:\/(driverFront|passengerFront|passengerRear|driverRear))?$/i);
+          if(tripPhoto){const image=store.getTripPhoto(tripPhoto[1],tripPhoto[2]);if(!image)return json(404,{message:'Photo not found.'});res.writeHead(200,{'Content-Type':image.photoType,'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});res.end(image.photo);return;}
           const imageMatch=path.match(/^\/api\/photos\/([a-f0-9-]{36})$/i);
           if (imageMatch) { const image=store.getPhoto(imageMatch[1]); if (!image) return json(404,{message:'Photo not found.'}); res.writeHead(200,{'Content-Type':image.photoType,'Content-Length':image.photo.length,'X-Content-Type-Options':'nosniff','Cache-Control':'no-store','Content-Security-Policy':"default-src 'none'"}); res.end(image.photo); return; }
+          if(path==='/api/locations')return json(200,store.locations());
           if (path==='/api/units') return json(200,store.list());
           const match = path.match(/^\/api\/units\/([a-f0-9-]{36})$/i);
           if (match) { const unit=store.get(match[1]); return unit ? json(200,unit) : json(404,{message:'Unit not found on this server.'}); }
@@ -72,16 +74,18 @@ export function createApp(dbPath = fileURLToPath(new URL('./data/lot-rot.sqlite'
         if (!['POST','PUT'].includes(req.method)) return json(405,{message:'Method not allowed.'});
         if (req.headers.origin && new URL(req.headers.origin).host !== req.headers.host) return json(403,{message:'Use the app on this server to save records.'});
         if (!(req.headers['content-type'] || '').startsWith('application/json')) return json(415,{message:'JSON required.'});
-        let raw=''; for await (const chunk of req) { raw+=chunk; if (Buffer.byteLength(raw)>8*1024*1024) throw new StoreError(413,'Request too large. Choose a photo up to 5 MB.'); }
+        let raw=''; for await (const chunk of req) { raw+=chunk; if (Buffer.byteLength(raw)>30*1024*1024) throw new StoreError(413,'Request too large. Choose a photo up to 5 MB.'); }
         let body; try { body=JSON.parse(raw); } catch { throw new StoreError(400,'Invalid JSON.'); }
         if(movement && movement[2] && req.method==='POST'){
           if(!req.employee)throw new StoreError(401,'Sign in with an individual employee account before recording a trip or correction.');
-          return json(201,store.event(movement[1],movement[2],{...body,employee:req.employee.name,employeeId:req.employee.id,employeeEmail:req.employee.email}));
+          return json(201,store.event(movement[1],movement[2],{...body,requireFourPhotos:true,employee:req.employee.name,employeeId:req.employee.id,employeeEmail:req.employee.email}));
         }
         if(coordinates && req.method==='POST'){
           if(!req.employee)throw new StoreError(401,'Sign in with an individual employee account before recording GPS.');
           return json(201,store.point(coordinates[1],body));
         }
+        const locationMatch=path.match(/^\/api\/locations\/([a-f0-9-]{36})$/i);if(locationMatch && req.method==='PUT')return json(200,store.renameLocation(locationMatch[1],body.name));
+        if(path==='/api/locations' && req.method==='POST')return json(201,store.addLocation(body.name));
         if (path==='/api/units' && req.method==='POST') return json(201,store.create(body));
         if (path==='/api/import' && req.method==='POST') return json(200,store.importUnits(body));
         const sold=path.match(/^\/api\/units\/([a-f0-9-]{36})\/sold$/i);

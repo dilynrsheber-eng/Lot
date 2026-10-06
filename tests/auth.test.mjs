@@ -28,7 +28,7 @@ test('authentication protects data, remembers restart, rejects cross-site posts 
     assert.deepEqual(me.company,{id:'test-dealership',name:'Freedom RV'});
     const unit=await (await fetch(base+'/api/units',{method:'POST',headers:{Origin:base,Cookie:cookie,'Content-Type':'application/json'},body:JSON.stringify({year:'2020',make:'Demo',model:'Identity',color:'White',stockNumber:'IDENTITY-TEST',vin:'1HGCM82633A004352'})})).json();
     const photoData='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=';
-    const event=await (await fetch(base+`/api/units/${unit.id}/trips/departure`,{method:'POST',headers:{Origin:base,Cookie:cookie,'Content-Type':'application/json'},body:JSON.stringify({employee:'Forged name',employeeId:'forged',employeeEmail:'someone@example.com',reason:'Service',photoData})})).json();
+    const event=await (await fetch(base+`/api/units/${unit.id}/trips/departure`,{method:'POST',headers:{Origin:base,Cookie:cookie,'Content-Type':'application/json'},body:JSON.stringify({employee:'Forged name',employeeId:'forged',employeeEmail:'someone@example.com',reason:'Service',conditionPhotos:Object.fromEntries(['driverFront','passengerFront','passengerRear','driverRear'].map(angle=>[angle,photoData]))})})).json();
     assert.equal(event.employee,'test@example.com');assert.equal(event.employeeId,me.employee.id);assert.equal(event.employeeEmail,me.employee.email);
     assert.equal((await fetch(base+'/api/units',{headers:{Cookie:cookie}})).status,200);
     await stop();await start();
