@@ -41,3 +41,5 @@ header{justify-content:flex-start}header .badge{margin-left:auto}.home-page head
 .drive-step[hidden],#drive-back[hidden],#drive-next[hidden],#drive-submit[hidden]{display:none!important}#trip-form .condition-photo-grid{display:block}#trip-form .actions{flex-wrap:wrap}
 
 .home-logo,.brand-image{object-fit:contain}.home-logo{height:auto}.brand-image{height:auto}
+
+.print-tag .tag-stock{margin:14px 0 18px;text-align:center;color:#000;overflow-wrap:anywhere}.tag-stock small{display:block;font-size:12px;letter-spacing:2px;margin-bottom:6px}.tag-stock span{display:block;font-size:32px;font-weight:800;line-height:1.2}

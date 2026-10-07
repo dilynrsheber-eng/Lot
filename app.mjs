@@ -125,7 +125,7 @@ function tag(unit) {
     try {
       const link = unitLink(document.querySelector('#tag-base').value, unit.id);
       const svg = qrSvg(link);
-      document.querySelector('#tag-preview').innerHTML = `<article class="print-tag"><div class="tag-brand">LOT ROT</div><h2>Stock ${escape(unit.stockNumber)}</h2><div class="qr-image">${svg}</div><p>${title(unit)}</p><p>${escape(unit.color)}</p><p class="vin">VIN ${escape(unit.vin)}</p><div class="tag-link">${escape(link)}</div><small>Shared prototype · Keep the inventory server running</small></article>`;
+      document.querySelector('#tag-preview').innerHTML = `<article class="print-tag"><div class="tag-brand">LOT ROT</div><div class="qr-image">${svg}</div><h2 class="tag-stock"><small>STOCK NUMBER</small><span>${escape(unit.stockNumber)}</span></h2><p>${title(unit)}</p><p>${escape(unit.color)}</p><p class="vin">VIN ${escape(unit.vin)}</p><div class="tag-link">${escape(link)}</div><small>Shared prototype · Keep the inventory server running</small></article>`;
       document.querySelector('#tag-error').textContent = '';
       document.querySelector('#print-tag').disabled = false;
     } catch { document.querySelector('#tag-error').textContent = 'Enter a valid http or https app address. If the address is too long, use a shorter address.'; }
