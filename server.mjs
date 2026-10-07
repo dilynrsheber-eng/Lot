@@ -36,6 +36,7 @@ export function createApp(dbPath = fileURLToPath(new URL('./data/lot-rot.sqlite'
       if(req.company?.name==='Freedom RV')store.seedLocations(['SV2','Irvington','Ina']);
       const path = new URL(req.url,'http://localhost').pathname;
       if(req.employee?.role==='employee' && ['POST','PUT','DELETE'].includes(req.method) && !/^\/api\/(?:stock-walks(?:\/[a-f0-9-]{36}\/(?:scan|complete))?|units\/[a-f0-9-]{36}\/trips\/(?:departure|return|note)|trips\/[a-f0-9-]{36}\/points)$/i.test(path))throw new StoreError(403,'Only dealership administrators can add, edit, import, or mark units sold.');
+      if(path==='/api/external-inventory'){if(req.employee?.role!=='admin')throw new StoreError(403,'Administrator access required.');if(req.method!=='GET')return json(405,{message:'Live connections are not enabled yet.'});return json(200,{status:'Not connected',providers:['ids','other']});}
       if(path==='/api/me' && req.method==='GET')return json(200,{employee:req.employee || null,company:req.company || null});
       if(path==='/save-unit' && req.method==='POST') {
         let input, destination='new';
